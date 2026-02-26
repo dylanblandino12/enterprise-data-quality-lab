@@ -34,7 +34,15 @@
 
 -- Query:
 
--- [your query here]
+SELECT
+	'DQ_ORG_001' AS dq_rule_id,
+	org_id,
+	org_name,
+	country,
+	created_at
+FROM enterprise_raw.organizations
+WHERE org_name IS NULL;
+
 
 
 -- =====================================================
@@ -46,7 +54,15 @@
 
 -- Query:
 
--- [your query here]
+SELECT
+	'DQ_ORG_002' AS dq_rule_id,
+	org_id,
+	org_name,
+	tax_id,
+	country,
+	created_at
+FROM enterprise_raw.organizations
+WHERE tax_id IS NULL;	
 
 
 -- =====================================================
@@ -58,7 +74,21 @@
 
 -- Query:
 
--- [your query here]
+SELECT
+    'DQ_ORG_003' AS dq_rule_id,
+    org_id,
+    org_name,
+    country,
+    created_at
+FROM enterprise_raw.organizations
+WHERE country IS NOT NULL
+  AND (
+        LENGTH(country) > 2
+     OR country LIKE '%.%'
+     OR country LIKE '%,%'
+     OR country <> UPPER(country)
+  );
+
 
 
 -- =====================================================
@@ -70,7 +100,30 @@
 
 -- Query:
 
--- [your query here]
+SELECT
+    'DQ_ORG_004' AS dq_rule_id,
+    org_id,
+    org_name,
+    country,
+    created_at
+FROM (
+
+    SELECT
+        org_id,
+        org_name,
+        country,
+        created_at,
+        COUNT(*) OVER (
+            PARTITION BY org_name, country
+        ) AS duplicate_count
+
+    FROM enterprise_raw.organizations
+    WHERE org_name IS NOT NULL
+      AND country IS NOT NULL
+
+) t
+
+WHERE duplicate_count > 1;
 
 
 -- =====================================================
@@ -78,8 +131,19 @@
 -- =====================================================
 
 -- Description:
--- Identify orphan parent_org_id values.
-
+-- Identify organizations whose parent_org_id does not
+-- exist in the organizations table.
+--
 -- Query:
 
--- [your query here]
+SELECT
+	  'DQ_ORG_005' AS dq_rule_id,
+    p.org_id,
+	  p.parent_org_id,
+    p.org_name,
+    p.created_at
+FROM enterprise_raw.organizations p
+LEFT JOIN enterprise_raw.organizations o
+	ON p.parent_org_id = o.org_id
+WHERE o.org_id IS NULL
+	AND p.parent_org_id IS NOT NULL;
