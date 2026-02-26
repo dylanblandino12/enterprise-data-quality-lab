@@ -134,43 +134,87 @@ FROM enterprise_raw.organizations;
 -- Query 1:
 -- Compare total rows vs distinct org_id
 
--- [your query here]
-
-
--- =====================================================
--- FINDINGS
--- =====================================================
--- Summary:
---
--- Details:
---
--- Impact:
---
--- Recommendation:
---
--- =====================================================
-
+SELECT 
+	COUNT(*) AS total_rows,
+    COUNT(DISTINCT org_id) AS distinct_org_id
+FROM
+	enterprise_raw.organizations;
 
 
 -- Query 2:
 -- Identify duplicate org_id values
 
--- [your query here]
+SELECT
+	org_id,
+	COUNT(*) AS duplicate_count
+FROM enterprise_raw.organizations
+GROUP BY org_id
+HAVING COUNT(*) > 1;
+
+-- =====================================================
+-- FINDINGS
+-- =====================================================
+-- Summary:
+-- org_id is fully unique. No duplicate values detected.
+--
+-- Details:
+-- Total row count matches distinct org_id count, and
+-- duplicate detection query returned 0 records.
+--
+-- Impact:
+-- org_id can be safely used as primary identifier for joins,
+-- aggregations, and downstream reporting without risk of duplication.
+--
+-- Recommendation:
+-- No remediation required. Maintain uniqueness validation as part
+-- of ongoing Data Quality monitoring.
+--
+-- =====================================================
+
+-- Uniqueness (business key)
+
+-- Query 1:
+-- Compare total rows vs distinct tax_id
+
+SELECT 
+	COUNT(*) AS total_rows,
+	COUNT(tax_id) AS non_null_tax_id_rows,
+    COUNT(DISTINCT tax_id) AS distinct_tax_id
+FROM
+	enterprise_raw.organizations;
+
+
+-- Query 2:
+-- Identify duplicate org_id values
+
+SELECT
+    tax_id,
+    COUNT(*) AS duplicate_count
+FROM enterprise_raw.organizations
+WHERE tax_id IS NOT NULL
+GROUP BY tax_id
+HAVING COUNT(*) > 1;
 
 
 -- =====================================================
 -- FINDINGS
 -- =====================================================
 -- Summary:
+-- tax_id is unique among populated values but has completeness issues.
 --
 -- Details:
+-- 11,248 unique tax_id values exist, with remaining records containing NULL tax_id.
+-- No duplicate tax_id values detected among non-null records.
 --
 -- Impact:
+-- tax_id can be used as a unique identifier where present, but NULL values
+-- limit its coverage across the full dataset.
 --
 -- Recommendation:
+-- Improve upstream capture of tax_id and evaluate whether it should be
+-- mandatory for all organizations.
 --
 -- =====================================================
-
 
 
 
@@ -179,51 +223,84 @@ FROM enterprise_raw.organizations;
 -- =====================================================
 
 -- Description:
--- Detect duplicate organizations using business attributes.
+-- Detect potential duplicate organizations based on
+-- business attributes rather than system identifier.
 --
 -- Purpose:
--- Identify entity duplication not captured by org_id.
+-- Identify multiple records that may represent the same
+-- real-world organization despite having different org_id.
+--
+-- Notes:
+-- Focus on attributes commonly used for entity identification.
 --
 -- =====================================================
 
 
 -- Query 1:
--- Duplicate detection based on tax_id
+-- Baseline comparison for business key combination
 
--- [your query here]
+SELECT
+    COUNT(*) AS total_rows,
+    COUNT(DISTINCT (org_name, country)) AS distinct_org_name_country
+FROM enterprise_raw.organizations;
 
 
 -- =====================================================
 -- FINDINGS
 -- =====================================================
 -- Summary:
+-- Severe organization duplication detected based on org_name and country.
 --
 -- Details:
+-- Only 182 unique organization name and country combinations exist
+-- across 15,000 records, indicating extensive duplication of entities.
 --
 -- Impact:
+-- Multiple org_id values likely represent the same real-world organization,
+-- which can lead to entity fragmentation, inaccurate reporting, and
+-- incorrect risk aggregation.
 --
 -- Recommendation:
+-- Entity resolution and deduplication processes should be implemented.
+-- org_name and country alone are insufficient to uniquely identify organizations.
 --
 -- =====================================================
-
 
 
 -- Query 2:
--- Duplicate detection based on org_name and country
+-- Duplicate detection using business key attributes
 
--- [your query here]
+SELECT
+    org_name,
+    country,
+    COUNT(*) AS duplicate_count
+FROM enterprise_raw.organizations
+WHERE org_name IS NOT NULL
+  AND country IS NOT NULL
+GROUP BY org_name, country
+HAVING COUNT(*) > 1
+ORDER BY duplicate_count DESC;
 
 
 -- =====================================================
 -- FINDINGS
 -- =====================================================
 -- Summary:
+-- Organization duplication driven by inconsistent country formatting.
 --
 -- Details:
+-- Multiple variations of country values (e.g., "UK", "U.K.", "CR",
+-- "costa rica", "DE", "de", "U.S.", "united states") are associated
+-- with the same organization names, creating artificial entity duplication.
 --
 -- Impact:
+-- Lack of country standardization causes entity fragmentation,
+-- leading to incorrect organization counts, inaccurate aggregation,
+-- and unreliable reporting.
 --
 -- Recommendation:
+-- Implement country normalization using ISO country codes and
+-- apply standardization rules before entity matching or reporting.
 --
 -- =====================================================
 
@@ -231,33 +308,58 @@ FROM enterprise_raw.organizations;
 
 
 -- =====================================================
--- SECTION 5: Hierarchical integrity
+-- SECTION 5: Referential integrity (parent_org_id)
 -- =====================================================
 
 -- Description:
--- Validate parent-child relationships between organizations.
+-- Validate parent-child relationships within organizations table.
 --
 -- Purpose:
--- Identify orphan parent_org_id values and hierarchy issues.
+-- Identify orphan parent_org_id values that do not reference
+-- a valid organization.
 --
 -- =====================================================
 
 
--- Query 1:
--- Identify orphan parent_org_id
+--Query 1 - KPI
+-- Show the total orphans.
+SELECT 
+    COUNT(*) AS orphan_parent_org_count
+FROM enterprise_raw.organizations p
+LEFT JOIN enterprise_raw.organizations o
+    ON p.parent_org_id = o.org_id
+WHERE o.org_id IS NULL
+  AND p.parent_org_id IS NOT NULL;
 
--- [your query here]
+
+-- Query 2 - Breakdown
+--Show the orphan parent_org_id for root cause analysis.
+SELECT 
+    p.parent_org_id
+FROM enterprise_raw.organizations p
+LEFT JOIN enterprise_raw.organizations o
+    ON p.parent_org_id = o.org_id
+WHERE o.org_id IS NULL
+  AND p.parent_org_id IS NOT NULL;
+
 
 
 -- =====================================================
 -- FINDINGS
 -- =====================================================
 -- Summary:
+-- No referential integrity issues detected in organization hierarchy.
 --
 -- Details:
+-- All parent_org_id values successfully reference a valid org_id,
+-- and no orphan parent-child relationships were found.
 --
 -- Impact:
+-- Organizational hierarchy structure is reliable and can be safely
+-- used for rollups, group reporting, and hierarchical analysis.
 --
 -- Recommendation:
+-- No remediation required. Continue monitoring as part of ongoing
+-- data quality controls.
 --
 -- =====================================================
